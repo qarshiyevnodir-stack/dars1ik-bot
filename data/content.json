@@ -1,0 +1,31 @@
+{
+  "classes": [
+    {
+      "id": "1",
+      "name": "1-sinf",
+      "subjects": [
+        {
+          "id": "alifbe",
+          "name": "Alifbe",
+          "textbooks": [
+            {
+              "id": "alifbe-ozbek",
+              "name": "Alifbe",
+              "file_name": "Alifbe-Ozbek.pdf"
+            }
+          ]
+        }
+      ]
+    },
+    {"id": "2", "name": "2-sinf", "subjects": []},
+    {"id": "3", "name": "3-sinf", "subjects": []},
+    {"id": "4", "name": "4-sinf", "subjects": []},
+    {"id": "5", "name": "5-sinf", "subjects": []},
+    {"id": "6", "name": "6-sinf", "subjects": []},
+    {"id": "7", "name": "7-sinf", "subjects": []},
+    {"id": "8", "name": "8-sinf", "subjects": []},
+    {"id": "9", "name": "9-sinf", "subjects": []},
+    {"id": "10", "name": "10-sinf", "subjects": []},
+    {"id": "11", "name": "11-sinf", "subjects": []}
+  ]
+}

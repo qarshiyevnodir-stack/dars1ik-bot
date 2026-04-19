@@ -1,0 +1,32 @@
+{
+  "classes": [
+    {
+      "id": "5",
+      "name": "5-sinf",
+      "subjects": [
+        {
+          "id": "matematika",
+          "name": "Matematika",
+          "textbooks": [
+            {
+              "id": "matematika-1",
+              "name": "5-sinf Matematika darsligi",
+              "file_name": "5-sinf-matematika.pdf"
+            }
+          ]
+        },
+        {
+          "id": "ona-tili",
+          "name": "Ona tili",
+          "textbooks": [
+            {
+              "id": "ona-tili-1",
+              "name": "5-sinf Ona tili darsligi",
+              "file_name": "5-sinf-ona-tili.pdf"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
