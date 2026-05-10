@@ -1,9 +1,13 @@
+import io
 import json
 import logging
 import os
 from pathlib import Path
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+import boto3
+from botocore.client import Config
+from botocore.exceptions import BotoCoreError, ClientError
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, InputFile, Update
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -15,17 +19,79 @@ BASE_DIR = Path(__file__).resolve().parent
 DATA_FILE = BASE_DIR / "data" / "content.json"
 TEXTBOOKS_DIR = BASE_DIR / "textbooks"
 TOKEN = os.getenv("BOT_TOKEN")
+R2_ACCOUNT_ID = os.getenv("R2_ACCOUNT_ID")
+R2_ACCESS_KEY_ID = os.getenv("R2_ACCESS_KEY_ID")
+R2_SECRET_ACCESS_KEY = os.getenv("R2_SECRET_ACCESS_KEY")
+R2_BUCKET_NAME = os.getenv("R2_BUCKET_NAME")
+R2_KEY_PREFIX = os.getenv("R2_KEY_PREFIX", "textbooks").strip("/")
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO,
 )
 logger = logging.getLogger(__name__)
+_r2_client = None
 
 
 def load_content() -> dict:
     with open(DATA_FILE, "r", encoding="utf-8") as f:
         return json.load(f)
+
+
+def get_r2_client():
+    global _r2_client
+    if _r2_client is not None:
+        return _r2_client
+
+    required = [R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME]
+    if not all(required):
+        logger.info("R2 muhit o‘zgaruvchilari to‘liq emas. Lokal fayl rejimi ishlatiladi.")
+        return None
+
+    _r2_client = boto3.client(
+        "s3",
+        endpoint_url=f"https://{R2_ACCOUNT_ID}.r2.cloudflarestorage.com",
+        aws_access_key_id=R2_ACCESS_KEY_ID,
+        aws_secret_access_key=R2_SECRET_ACCESS_KEY,
+        region_name="auto",
+        config=Config(signature_version="s3v4"),
+    )
+    return _r2_client
+
+
+def build_textbook_key(textbook: dict) -> str | None:
+    if textbook.get("r2_key"):
+        return textbook["r2_key"].lstrip("/")
+    file_name = textbook.get("file_name")
+    if not file_name:
+        return None
+    if R2_KEY_PREFIX:
+        return f"{R2_KEY_PREFIX}/{file_name}"
+    return file_name
+
+
+def open_textbook_stream(textbook: dict):
+    file_name = textbook.get("file_name") or Path(textbook.get("r2_key", "textbook.pdf")).name
+    local_path = TEXTBOOKS_DIR / file_name
+    if local_path.exists():
+        logger.info("Darslik lokal papkadan yuboriladi: %s", local_path)
+        return local_path.open("rb"), file_name
+
+    client = get_r2_client()
+    key = build_textbook_key(textbook)
+    if not client or not key:
+        return None, file_name
+
+    try:
+        logger.info("Darslik R2 dan olinmoqda: bucket=%s key=%s", R2_BUCKET_NAME, key)
+        obj = client.get_object(Bucket=R2_BUCKET_NAME, Key=key)
+        data = obj["Body"].read()
+        stream = io.BytesIO(data)
+        stream.name = file_name
+        return stream, file_name
+    except (ClientError, BotoCoreError) as exc:
+        logger.exception("R2 dan darslikni olishda xato: %s", exc)
+        return None, file_name
 
 
 def get_main_keyboard(content: dict) -> InlineKeyboardMarkup:
@@ -159,15 +225,19 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             await query.edit_message_text("Darslik topilmadi.")
             return
 
-        file_path = TEXTBOOKS_DIR / textbook["file_name"]
-        if not file_path.exists():
-            await query.message.reply_text("PDF fayl topilmadi. Iltimos, admin bilan bog‘laning.")
+        document_stream, file_name = open_textbook_stream(textbook)
+        if not document_stream:
+            await query.message.reply_text("Darslik fayli topilmadi. Iltimos, admin bilan bog‘laning.")
             return
 
-        await query.message.reply_document(
-            document=file_path.open("rb"),
-            caption=f"{textbook['name']}"
-        )
+        try:
+            await query.message.reply_document(
+                document=InputFile(document_stream, filename=file_name),
+                caption=f"{textbook['name']}",
+            )
+        finally:
+            document_stream.close()
+
         await query.message.reply_text(
             "Yana davom etish uchun sinfni tanlang.",
             reply_markup=get_main_keyboard(content),
