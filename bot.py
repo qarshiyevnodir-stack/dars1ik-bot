@@ -399,6 +399,39 @@ def get_subjects_keyboard(class_item: dict) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(buttons)
 
 
+def normalize_callback_parts(raw_data: str, content: dict) -> list[str]:
+    if not raw_data:
+        return [""]
+
+    if ":" in raw_data:
+        return raw_data.split(":")
+
+    if raw_data == "back_classes":
+        return ["back", "classes"]
+
+    if raw_data.startswith("back_subjects_"):
+        return ["back", "subjects", raw_data[len("back_subjects_"):]]
+
+    if raw_data.startswith("class_"):
+        return ["class", raw_data[len("class_"):]]
+
+    if raw_data.startswith("subject_"):
+        parts = raw_data.split("_", 2)
+        if len(parts) == 3:
+            return ["subject", parts[1], parts[2]]
+
+    if raw_data.startswith("textbook_"):
+        parts = raw_data.split("_", 3)
+        if len(parts) == 4:
+            return ["textbook", parts[1], parts[2], parts[3]]
+
+    class_ids = {item["id"] for item in content.get("classes", [])}
+    if raw_data in class_ids:
+        return ["class", raw_data]
+
+    return [raw_data]
+
+
 def get_textbooks_keyboard(class_id: str, subject: dict) -> InlineKeyboardMarkup:
     buttons = []
     for textbook in subject.get("textbooks", []):
@@ -431,7 +464,8 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     query = update.callback_query
     await query.answer()
     content = load_content()
-    data = query.data.split(":")
+    data = normalize_callback_parts(query.data or "", content)
+    logger.info("Callback qabul qilindi: raw=%s normalized=%s", query.data, data)
 
     if data[0] == "class":
         class_id = data[1]
@@ -514,23 +548,25 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         return
 
     if data[0] == "back":
-        if data[1] == "classes":
+        if len(data) > 1 and data[1] == "classes":
             await query.edit_message_text(
                 "Kerakli darslikni olish uchun sinfni tanlang.",
                 reply_markup=get_main_keyboard(content),
             )
             return
-        if data[1] == "subjects":
-            class_id = data[2]
-            class_item = get_class_item(class_id, content)
-            if not class_item:
-                await query.edit_message_text("Sinf topilmadi.")
-                return
-            await query.edit_message_text(
-                f"{class_item['name']} uchun fanni tanlang.",
-                reply_markup=get_subjects_keyboard(class_item),
-            )
+        if len(data) > 2 and data[1] == "subjects":
+            class_item = get_class_item(data[2], content)
+            if class_item:
+                await query.edit_message_text(
+                    f"{class_item['name']} uchun fanni tanlang.",
+                    reply_markup=get_subjects_keyboard(class_item),
+                )
             return
+
+    await query.edit_message_text(
+        "Ushbu tugma eski xabardan qolgan yoki formati o‘zgargan. Iltimos, /start yuborib qayta tanlang.",
+        reply_markup=get_main_keyboard(content) if has_textbooks(content) else None,
+    )
 
 
 def main() -> None:
